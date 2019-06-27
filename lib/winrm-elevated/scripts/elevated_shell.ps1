@@ -17,8 +17,10 @@ if($interactive -eq 'true') {
 }
 
 $task_name = "WinRM_Elevated_Shell"
-$out_file = [System.IO.Path]::GetTempFileName()
-$err_file = [System.IO.Path]::GetTempFileName()
+# WinXP schtask does not support command on more than 255 characters
+# Out and Err file could not be located in "Documents and Settings" of XP
+$out_file = "C:\WINDOWS\Temp\" + [System.IO.Path]::GetRandomFilename()
+$err_file = "C:\WINDOWS\Temp\" + [System.IO.Path]::GetRandomFilename()
 
 $task_xml = @'
 <?xml version="1.0" encoding="UTF-16"?>
@@ -108,22 +110,24 @@ try {
   [System.Runtime.Interopservices.Marshal]::ReleaseComObject($schedule) | Out-Null
 
 } catch {
-  $schtasks = "schtasks"
-  $create_arguments = "/create", "/tn", $task_name, "/sc", "ONSTART", "/ru", $username, "/rp", "$pass_to_use", "/tr", "powershell.exe -executionpolicy bypass -NoProfile \`"`& \`"\`"$script_file\`"\`"\`" > $out_file 2> $err_file"
+  # If Schedule.Service is not available We might try schtasks
+  $run_next = (Get-Date).AddHours(2) | Get-Date -Format "HH:mm:ss"
 
-  & $schtasks $create_arguments > c:\Windows\Temp\tasks.log 2>&1
-  & $schtasks /query /fo csv /v >> c:\Windows\Temp\tasks.log 2>&1
-  & $schtasks /run /tn $task_name >> c:\Windows\Temp\tasks.log 2>&1
+  $schtasks = "schtasks"
+  $create_arguments = "/create", "/tn", $task_name, "/sc", "MONTHLY", "/st", $run_next, "/ru", $username, "/rp", "$pass_to_use", "/tr", "cmd.exe /c powershell -executionpolicy bypass -NoProfile -File $script_file > \`"$out_file\`" 2> \`"$err_file\`""
+
+  & $schtasks $create_arguments > $null 2>&1
+  & $schtasks /run /tn $task_name > $null 2>&1
   
   $timeout = 10
   $sec = 0
   do {
-    $task = (& cmd /c schtasks /query /fo csv /v | ConvertFrom-CSV | Where-Object {$_.TaskName -Eq $task_name})
+    $task = (& $schtasks /query /fo csv /v | ConvertFrom-CSV | Where-Object {$_.TaskName -Eq $task_name})
     Start-Sleep -s 1
     $sec++
-  } while ([string]::IsNullOrEmpty($task."Last Result") -and ($sec -lt $timeout))
+  } while (($task."Last Run Time" -eq "Never") -and ($sec -lt $timeout))
 
-  & $schtasks /delete /tn $task_name /f >> c:\Windows\Temp\tasks.log 2>&1
+  & $schtasks /delete /tn $task_name /f > $null 2>&1
 
   $err_cur_line = 0
   $out_cur_line = 0
