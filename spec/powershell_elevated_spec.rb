@@ -54,6 +54,15 @@ describe 'powershell elevated runner', integration: true do # rubocop: disable M
     it { should match(/Windows IP Configuration/) }
   end
 
+  describe 'long lasting' do
+    subject(:output) { elevated_shell.run(%q{
+      Start-Sleep -s 15
+      echo 'Hello World'}) }
+    it { should have_exit_code 0 }
+    it { should have_stdout_match(/Hello World/) }
+    it { should have_no_stderr }
+  end
+
   describe 'capturing output from Write-Host and Write-Error' do
     subject(:output) do
       script = <<-COMMAND

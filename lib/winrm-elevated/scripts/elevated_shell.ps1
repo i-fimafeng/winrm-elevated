@@ -121,28 +121,36 @@ try {
   
   $timeout = 10
   $sec = 0
+
+  Write-Output "running task" > c:\WINDOWS\Temp\task.log
   do {
     $task = (& $schtasks /query /fo csv /v | ConvertFrom-CSV | Where-Object {$_.TaskName -Eq $task_name})
+    Write-Output $task >> c:\WINDOWS\Temp\task.log
     Start-Sleep -s 1
     $sec++
   } while (($task."Last Run Time" -eq "Never") -and ($sec -lt $timeout))
 
-  & $schtasks /delete /tn $task_name /f > $null 2>&1
-
   $err_cur_line = 0
   $out_cur_line = 0
-  Start-Sleep -m 100
-  $out_cur_line = SlurpOutput $out_file $out_cur_line 'out'
-  $err_cur_line = SlurpOutput $err_file $err_cur_line 'err'
+  do {
+    $task = (& $schtasks /query /fo csv /v | ConvertFrom-CSV | Where-Object {$_.TaskName -Eq $task_name})
+    Write-Output $task >> c:\WINDOWS\Temp\task.log
+    Start-Sleep -m 100
+    $out_cur_line = SlurpOutput $out_file $out_cur_line 'out'
+    $err_cur_line = SlurpOutput $err_file $err_cur_line 'err'
+  } while ($task."Status" -eq "Running")
+
+  Write-Output $task >> c:\WINDOWS\Temp\task.log
 
   $exit_code = $task."Last Result"
+  & $schtasks /delete /tn $task_name /f > $null 2>&1
 }
 
 # We'll make a best effort to clean these files
 # But a reboot could possibly end the task while the process
 # still runs and locks the file. If we can't delete we don't want to fail
-try { Remove-Item $out_file -ErrorAction Stop } catch {}
-try { Remove-Item $err_file -ErrorAction Stop } catch {}
+#try { Remove-Item $out_file -ErrorAction Stop } catch {}
+#try { Remove-Item $err_file -ErrorAction Stop } catch {}
 try { Remove-Item $script_file -ErrorAction Stop } catch {}
 
 exit $exit_code
